@@ -6,6 +6,7 @@ import application.domain.TypeInterruption;
 import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.UUID;
 
 import application.domain.Process;
 
@@ -16,10 +17,10 @@ public class OperationalSystem {
     private Random random;
     private Timer executor;
     private int current_execution = 0;
-    private final int MAX_PROCESS = 20;
-    private final int EXECUTION_LIMIT = 20;
-    private final int TIME_TO_CHANGE_PROCESS = 1000;
-    private final int DELAY_TO_CHANGE_PROCESS = 50;
+    private final int MAX_PROCESS = 2;
+    private final int EXECUTION_LIMIT = 30;
+    private final int TIME_TO_CHANGE_PROCESS = 1300;
+    private final int DELAY_TO_CHANGE_PROCESS = 70;
 
     public OperationalSystem(String name, String version) {
         this.name = name;
@@ -34,7 +35,7 @@ public class OperationalSystem {
         this.processManager = new ProcessManager();
 
         for(int i = 0; i < MAX_PROCESS; i++) {
-            createProcess(generateRamdonPriority());
+            createProcess(generateRandomPriority(), generateRandomProcessSize());
         }
 
         var task = new TimerTask(){
@@ -43,7 +44,7 @@ public class OperationalSystem {
                 if(++current_execution > EXECUTION_LIMIT) {
                     executor.cancel();
 
-                    System.out.println("Operating system " + name + " " + version +  " finished");
+                    System.out.println("\nOperating system " + name + " " + version +  " finished");
 
                     return;
                 }
@@ -65,6 +66,56 @@ public class OperationalSystem {
             
             runSpecificProcess(processManager.getReadyProcessByIndex(indexRandom));
         }
+
+        var currentProcess = processManager.getCurrentProcessRunning();
+
+        var randomPageId = currentProcess.getRandomPageId();
+
+        accessPageForProcessByPageId(currentProcess ,randomPageId);
+    }
+
+    private void accessPageForProcessByPageId(Process process, UUID pageId) {
+        var pageFoundInPrincipalMemory = processManager.canAccessPageInPrincipalMemory(pageId);
+
+        var message = pageFoundInPrincipalMemory
+            ? "Page: " + pageId + " is in principal memory"
+            : "Page: " + pageId + " isn't in principal memory";
+
+        System.out.println(message);
+
+        validateAlocatedPagesByProcess(process);
+
+        validateIfPrincipalMemoryIsFull();
+
+        processManager.loadPageFromSecondaryMemoryToPrincipal(pageId);
+    }
+
+    private void validateAlocatedPagesByProcess(Process process) {
+        var pagesId = process.getCurrentPagesId();
+        var numberOfPagesAlocated = 0;
+
+        for(var pageId : pagesId) {
+            var pageFoundInPrincipalMemory = processManager.canAccessPageInPrincipalMemory(pageId);
+
+            if(pageFoundInPrincipalMemory)
+                numberOfPagesAlocated++;
+        }
+
+        var message = numberOfPagesAlocated != 4
+            ? "Process don't has 4 pages alocated in principal memory"
+            : "Process has 4 pages alocated in principal memory";
+
+        System.out.println(message);
+    }
+
+    private void validateIfPrincipalMemoryIsFull() {
+        var principalMemoryIsFull = processManager.principalMemoryIsFull();
+
+        var message = principalMemoryIsFull
+            ? "Principal memory is full"
+            : "Principal memory isn't full";
+
+        System.out.println(message);
     }
 
     private void runSpecificProcess(Process process) {
@@ -79,12 +130,12 @@ public class OperationalSystem {
         showCurrentProcess();
     }
 
-    private void createProcess(int priority) {
-        var process = new Process(priority);
+    private void createProcess(int priority, int size) {
+        var process = new Process(priority, size);
         
         processManager.addProcess(process);
         
-        System.out.println("Creating a new process with PID: " + process.getPid());
+        System.out.println("\nCreating a new process with PID: " + process.getPid());
     }
 
     private void showCurrentProcess() {
@@ -92,11 +143,15 @@ public class OperationalSystem {
 
         if(process == null) return;
 
-        System.out.println("Current process running PID: " + process.getPid());
+        System.out.println("\nCurrent process running PID: " + process.getPid());
     }
 
-    private int generateRamdonPriority() {
+    private int generateRandomPriority() {
         return random.nextInt(19) + 1;
+    }
+
+    private int generateRandomProcessSize() {
+        return random.nextInt(200) + 1;
     }
 
     private TypeInterruption getRandomInterruption() {
