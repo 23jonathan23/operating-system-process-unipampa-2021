@@ -2,16 +2,21 @@ package application.domain;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.UUID;
 
 public class ProcessManager {
     private LinkedList <Process> readyQueue;
     private LinkedList <Process> jobQueue;
     private LinkedList <Process> deviceQueue;
+    private PrincipalMemory principalMemory;
+    private SecondaryMemory secondaryMemory;
     
     public ProcessManager() {
         this.readyQueue = new LinkedList<>();
         this.jobQueue = new LinkedList<>();
         this.deviceQueue = new LinkedList<>();
+        this.principalMemory = new PrincipalMemory(1024);
+        this.secondaryMemory = new SecondaryMemory();
     }
 
     public Process getCurrentProcessRunning() {
@@ -41,6 +46,45 @@ public class ProcessManager {
         this.readyQueue.add(process);
 
         sortQueuesByPriority();
+
+        createPagesForProcess(process);
+    }
+
+    private void createPagesForProcess(Process process) {
+        var numberOfPages = process.getSize() / Page.sizeInKiloBytes;
+
+        numberOfPages = numberOfPages > Process.limitPages ? Process.limitPages : numberOfPages;
+
+        for (int i = 0; i < numberOfPages; i++) {
+            var page = new Page();
+
+            secondaryMemory.addPage(page);
+            process.addPageId(page.getId());
+        }
+    }
+
+    public boolean canAccessPageInPrincipalMemory(UUID pageId) {
+        return principalMemory.pageIsInMemory(pageId);
+    }
+
+    public void loadPageFromSecondaryMemoryToPrincipal(UUID pageId) {
+        var page = secondaryMemory.getPageById(pageId);
+
+        if(page != null) {
+            if(principalMemory.memoryIsFull()) {
+                var firstPageInMemory = principalMemory.getFirstPage();
+
+                principalMemory.removePage(firstPageInMemory);
+                secondaryMemory.addPage(page);
+            }
+
+            secondaryMemory.removePage(page);
+            principalMemory.addPage(page);
+        }
+    }
+
+    public boolean principalMemoryIsFull() {
+        return principalMemory.memoryIsFull();
     }
 
     public void runNextProcessByPreemption() {
@@ -58,6 +102,8 @@ public class ProcessManager {
 
             this.jobQueue.remove(processRunning);
             this.readyQueue.add(processRunning);
+
+            principalMemory.deallocateMemory(processRunning.getSize());
         }
         
         sortQueuesByPriority();
@@ -65,6 +111,8 @@ public class ProcessManager {
         var processToRun = this.jobQueue.getFirst();
 
         processToRun.setState(ProcessState.RUNNING);
+
+        principalMemory.allocateMemory(processToRun.getSize());
     }
 
     public void runSpecificProcess(Process processToRun) {
@@ -76,6 +124,8 @@ public class ProcessManager {
 
             this.jobQueue.remove(processRunning);
             this.readyQueue.add(processRunning);
+
+            principalMemory.deallocateMemory(processRunning.getSize());
         }
 
         this.readyQueue.remove(processToRun);
@@ -83,6 +133,8 @@ public class ProcessManager {
         processToRun.setState(ProcessState.RUNNING);
 
         this.jobQueue.add(processToRun);
+
+        principalMemory.allocateMemory(processToRun.getSize());
 
         sortQueuesByPriority();
     }
